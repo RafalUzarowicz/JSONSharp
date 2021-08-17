@@ -4,6 +4,8 @@ public class JSONInt : JSONValue
 {
     private int _content;
 
+    public int Content => _content;
+
     public JSONInt(int value)
     {
         _content = value;

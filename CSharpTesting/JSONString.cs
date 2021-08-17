@@ -5,6 +5,8 @@ public class JSONString : JSONValue
 {
     private string _content;
 
+    public string Content => _content;
+
     public JSONString(string value)
     {
         _content = value;
@@ -16,6 +18,6 @@ public class JSONString : JSONValue
 
     public override void Deserialize(string text)
     {
-        throw new NotImplementedException();
+        _content = text;
     }
 }

@@ -160,20 +160,29 @@ public class ObjectDumper
     }
 }
 
-public interface IJSONable
-{
-    public JSONObject ToJSON();
-}
-
 /// <summary>
 /// Struct representing resource used in game.
 /// </summary>
 [Serializable][JSONable]
 public struct ROOT_Resource
 {
-    [JSONField] public string name;
-    [JSONField] public HashSet<string> tags;
-    [JSONField] public int value;
+    public string name;
+    public HashSet<string> tags;
+    public int value;
+
+    public ROOT_Resource(string name, int value)
+    {
+        this.name = name;
+        this.value = value;
+        tags = new HashSet<string>();
+    }
+        
+    public ROOT_Resource(string name, int value, HashSet<string> tags)
+    {
+        this.name = name;
+        this.value = value;
+        this.tags = tags ?? new HashSet<string>();
+    }
     
     public static ROOT_Resource operator+(ROOT_Resource first, ROOT_Resource second)
     {
@@ -211,25 +220,50 @@ public class ROOT_Resources
     }
 
     /// <summary>
-    /// Constructor that can read resources from JSONObject. JSONObject's contents must be compatible with Resource type.
+    /// Constructor that can read resources from JSONObject. JSONObject's content must be compatible with Resource type.
     /// </summary>
     /// <param name="resourcesJson">Source for collection.</param>
     public ROOT_Resources(JSONObject resourcesJson)
     {
-        // TODO: implement
+        foreach (var potentialResource in resourcesJson)
+        {
+            JSONObject resourceObject = potentialResource as JSONObject;
+            if (resourceObject != null && resourceObject.Contains("name") && resourceObject.Contains("tags") && resourceObject.Contains("value"))
+            {
+                JSONArray tagsArray = resourceObject.GetValue("tags") as JSONArray;
+                if (tagsArray != null)
+                {
+                    ROOT_Resource resource = new ROOT_Resource();
+                    resource.name = (resourceObject.GetValue("name") as JSONString)?.Content;
+                    var intPtr = (resourceObject.GetValue("value") as JSONInt)?.Content;
+                    if (intPtr != null)
+                        resource.value = (int) intPtr;
+                    foreach (var tag in tagsArray)
+                    {
+                        JSONString jsonTag = tag as JSONString;
+                        if (jsonTag != null)
+                        {
+                            resource.tags.Add(jsonTag.Content);
+                        }
+                    }
+                    AddResource(resource, true);
+                }
+            }
+        }
     }
     
     /// <summary>
-    /// Returns list of resources that use specific tag.
+    /// Returns list of resources that use given tag.
     /// </summary>
     /// <param name="tag">Tag used to find resources.</param>
-    /// <returns></returns>
+    /// <returns>Found resource or null if this tag is not used.</returns>
     public List<ROOT_Resource> GetFromTag(string tag)
     {
         if (_tagsSets.TryGetValue(tag, out var resources))
         {
             return resources.ToList();
         }
+
         return null;
     }
 
@@ -237,13 +271,14 @@ public class ROOT_Resources
     /// Get specific resource by it's name.
     /// </summary>
     /// <param name="name">Resource name used while searching.</param>
-    /// <returns>Found resource or null.</returns>
+    /// <returns>Found resource or null if there is no resource related to given name.</returns>
     public ROOT_Resource? GetFromName(string name)
     {
         if (_resources.TryGetValue(name, out var resource))
         {
             return resource;
         }
+
         return null;
     }
 
@@ -253,9 +288,19 @@ public class ROOT_Resources
     /// <param name="name">Name of the new resource.</param>
     /// <param name="overwriteIfExists">Overwrite existing resource.</param>
     /// <param name="initialValue">Resource's initial value.</param>
-    public void AddResourceWithOverwriteFlag(string name, bool overwriteIfExists = false, int initialValue = 0)
+    public void AddResource(string name, bool overwriteIfExists, int initialValue = 0)
     {
         AddResource(name, initialValue, null, overwriteIfExists);
+    }
+
+    /// <summary>
+    /// Add given resource.
+    /// </summary>
+    /// <param name="resource">Resource to add.</param>
+    /// <param name="overwriteIfExists">Overwrite existing resource.</param>
+    public void AddResource(ROOT_Resource resource, bool overwriteIfExists = false)
+    {
+        AddResource(resource.name, resource.value, resource.tags, overwriteIfExists);
     }
 
     /// <summary>
@@ -264,7 +309,7 @@ public class ROOT_Resources
     /// <param name="name">Name of the new resource.</param>
     /// <param name="tags">Tags that will be used for new resource.</param>
     /// <param name="initialValue">New resource's initial value.</param>
-    public void AddResourceWithTags(string name, HashSet<string> tags = null, int initialValue = 0)
+    public void AddResource(string name, HashSet<string> tags, int initialValue = 0)
     {
         AddResource(name, initialValue, tags, false);
     }
@@ -276,7 +321,8 @@ public class ROOT_Resources
     /// <param name="initialValue">New resource's initial value.</param>
     /// <param name="tags">Tags that will be used for new resource.</param>
     /// <param name="overwriteIfExists">Overwrite existing resource.</param>
-    public void AddResource(string name, int initialValue = 0, HashSet<string> tags = null, bool overwriteIfExists = false)
+    public void AddResource(string name, int initialValue = 0, HashSet<string> tags = null,
+        bool overwriteIfExists = false)
     {
         if (_resources.TryGetValue(name, out var resource) && overwriteIfExists)
         {
@@ -291,12 +337,13 @@ public class ROOT_Resources
                 tags = tags ?? new HashSet<string>()
             };
 
-            foreach (var tag in _resources[name].tags) 
+            foreach (var tag in _resources[name].tags)
             {
                 if (!_tagsSets.ContainsKey(tag))
                 {
                     _tagsSets[tag] = new HashSet<ROOT_Resource>();
                 }
+
                 _tagsSets[tag].Add(_resources[name]);
             }
         }
@@ -310,7 +357,7 @@ public class ROOT_Resources
     {
         if (_resources.ContainsKey(name))
         {
-            foreach (var tag in _resources[name].tags) 
+            foreach (var tag in _resources[name].tags)
             {
                 if (_tagsSets[tag].Count == 1)
                 {
@@ -371,11 +418,12 @@ public class ROOT_Resources
             var resource = _resources[name];
             resource.tags.Add(tag);
             _resources[name] = resource;
-            
+
             if (!_tagsSets.ContainsKey(tag))
             {
                 _tagsSets[tag] = new HashSet<ROOT_Resource>();
             }
+
             _tagsSets[tag].Add(_resources[name]);
         }
     }
@@ -392,7 +440,7 @@ public class ROOT_Resources
             var resource = _resources[name];
             resource.tags.Remove(tag);
             _resources[name] = resource;
-            
+
             if (_tagsSets[tag].Count == 1)
             {
                 _tagsSets.Remove(tag);
@@ -403,7 +451,7 @@ public class ROOT_Resources
             }
         }
     }
-    
+
     /// <summary>
     /// Add value to specific resource.
     /// </summary>
@@ -418,7 +466,7 @@ public class ROOT_Resources
             resource.value += value;
             _resources[name] = resource;
         }
-        else if(createIfNotExists)
+        else if (createIfNotExists)
         {
             _resources[name] = new ROOT_Resource()
             {
@@ -428,7 +476,7 @@ public class ROOT_Resources
             };
         }
     }
-    
+
     /// <summary>
     /// Subtract value from specific resource.
     /// </summary>
@@ -466,7 +514,7 @@ public class Test
     // [JSONField] private int test = 0;
 
     // [JSONField] public List<int> intList = new List<int>() {2, 4, 5, 7};
-    [JSONField] public int[] intArray= new []{2, 4, 5, 7};
+    [JSONField] public int[] intArray = new []{2, 4, 5, 7};
     // [JSONField] public Dictionary<string, int> IntDictionary = new Dictionary<string, int>() {["dwa"] = 2, ["cztery"] = 4};
 }
 
